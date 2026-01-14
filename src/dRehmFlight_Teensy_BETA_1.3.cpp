@@ -140,7 +140,7 @@ Everyone that sends me pictures and videos of your flying creations! -Nick
 #endif
 
 #define MIN_PULSE 1000       // Tắt hẳn
-#define MIN_THROTTLE 1080    // <--- ĐIỂM QUAY ĐỀU CỦA CẢ 4 CÁI (Con số bạn vừa tìm + 30)
+#define MIN_THROTTLE 1100    // <--- ĐIỂM QUAY ĐỀU CỦA CẢ 4 CÁI (Con số bạn vừa tìm + 30)
 #define MAX_THROTTLE 2000    // Ga tối đa
 
 
@@ -157,9 +157,9 @@ unsigned long channel_5_fs = 2000; //gear, greater than 1500 = throttle cut
 unsigned long channel_6_fs = 2000; //aux1
 
 //Filter parameters - Defaults tuned for 2kHz loop rate; Do not touch unless you know what you are doing:
-float B_madgwick = 0.04;  //Madgwick filter parameter
-float B_accel = 0.2;     //Accelerometer LP filter paramter, (MPU6050 default: 0.14. MPU9250 default: 0.2)
-float B_gyro = 0.17;       //Gyro LP filter paramter, (MPU6050 default: 0.1. MPU9250 default: 0.17)
+float B_madgwick = 0.15;  //Madgwick filter parameter
+float B_accel = 0.14;     //Accelerometer LP filter paramter, (MPU6050 default: 0.14. MPU9250 default: 0.2)
+float B_gyro = 0.4;       //Gyro LP filter paramter, (MPU6050 default: 0.1. MPU9250 default: 0.17)
 float B_mag = 1.0;        //Magnetometer LP filter parameter
 
 //Magnetometer calibration parameters - if using MPU9250, uncomment calibrateMagnetometer() in void setup() to get these values, else just ignore these
@@ -184,14 +184,21 @@ float maxRoll = 30.0;     //Max roll angle in degrees for angle mode (maximum ~7
 float maxPitch = 30.0;    //Max pitch angle in degrees for angle mode (maximum ~70 degrees), deg/sec for rate mode
 float maxYaw = 160.0;     //Max yaw rate in deg/sec
 
-float Kp_roll_angle = 0.2;    //Roll P-gain - angle mode 
-float Ki_roll_angle = 0.3;    //Roll I-gain - angle mode
-float Kd_roll_angle = 0.05;   //Roll D-gain - angle mode (has no effect on controlANGLE2)
+float Kp_roll_angle = 0.3;    //Roll P-gain - angle mode 
+float Ki_roll_angle = 0.1;    //Roll I-gain - angle mode
+float Kd_roll_angle = 0.0001;   //Roll D-gain - angle mode (has no effect on controlANGLE2)
 float B_loop_roll = 0.9;      //Roll damping term for controlANGLE2(), lower is more damping (must be between 0 to 1)
-float Kp_pitch_angle = 0.2;   //Pitch P-gain - angle mode
-float Ki_pitch_angle = 0.3;   //Pitch I-gain - angle mode
-float Kd_pitch_angle = 0.05;  //Pitch D-gain - angle mode (has no effect on controlANGLE2)
+
+// float Kp_pitch_angle = 0.2;   //Pitch P-gain - angle mode
+// float Ki_pitch_angle = 0.3;   //Pitch I-gain - angle mode
+// float Kd_pitch_angle = 0.05;  //Pitch D-gain - angle mode (has no effect on controlANGLE2)
+float Kp_pitch_angle = 0.3;   //Pitch P-gain - angle mode
+float Ki_pitch_angle = 0.2;   //Pitch I-gain - angle mode
+float Kd_pitch_angle = 0.025;  //Pitch D-gain - angle mode (has no effect on controlANGLE2)
 float B_loop_pitch = 0.9;     //Pitch damping term for controlANGLE2(), lower is more damping (must be between 0 to 1)
+
+
+
 
 float Kp_roll_rate = 0.15;    //Roll P-gain - rate mode
 float Ki_roll_rate = 0.2;     //Roll I-gain - rate mode
@@ -201,8 +208,8 @@ float Ki_pitch_rate = 0.2;    //Pitch I-gain - rate mode
 float Kd_pitch_rate = 0.0002; //Pitch D-gain - rate mode (be careful when increasing too high, motors will begin to overheat!)
 
 float Kp_yaw = 0.3;           //Yaw P-gain
-float Ki_yaw = 0.05;          //Yaw I-gain
-float Kd_yaw = 0.00015;       //Yaw D-gain (be careful when increasing too high, motors will begin to overheat!)
+float Ki_yaw = 0.025;          //Yaw I-gain
+float Kd_yaw = 0.000075;       //Yaw D-gain (be careful when increasing too high, motors will begin to overheat!)
 
 
 
@@ -369,6 +376,10 @@ void printMotorCommands();
 void printServoCommands();
 void printLoopRate();
 
+void printDiagnosticForPlotter();
+
+void safetyCheck();
+
 // ================================================================================================= //
 
 
@@ -379,7 +390,6 @@ void printLoopRate();
 
 void setup() {
   Serial.begin(500000); //USB serial
-  delay(10000);
   
   //Initialize all pins
   pinMode(13, OUTPUT); //Pin 13 LED blinker on board, do not modify 
@@ -477,7 +487,7 @@ void loop() {
   //printGyroData();      //Prints filtered gyro data direct from IMU (expected: ~ -250 to 250, 0 at rest)
   //printAccelData();     //Prints filtered accelerometer data direct from IMU (expected: ~ -2 to 2; x,y 0 when level, z 1 when level)
   //printMagData();       //Prints filtered magnetometer data direct from IMU (expected: ~ -300 to 300)
-  //printRollPitchYaw();  //Prints roll, pitch, and yaw angles in degrees from Madgwick filter (expected: degrees, 0 when level)
+  printRollPitchYaw();  //Prints roll, pitch, and yaw angles in degrees from Madgwick filter (expected: degrees, 0 when level)
   //printPIDoutput();     //Prints computed stabilized PID variables from controller and desired setpoint (expected: ~ -1 to 1)
   //printMotorCommands(); //Prints the values being written to the motors (expected: 120 to 250)
   //printServoCommands(); //Prints the values being written to the servos (expected: 0 to 180)
@@ -510,6 +520,7 @@ void loop() {
 
   //Throttle cut check
   throttleCut(); //Directly sets motor commands to low based on state of ch5
+  safetyCheck();
 
   //Command actuators
   commandMotors(); //Sends command pulses to each motor pin using OneShot125 protocol
@@ -525,8 +536,9 @@ void loop() {
   getCommands(); //Pulls current available radio commands
   failSafe(); //Prevent failures in event of bad receiver connection, defaults to failsafe values assigned in setup
 
+  //printDiagnosticForPlotter();
   //Regulate loop rate
-  loopRate(50); //Do not exceed 2000Hz, all filter parameters tuned to 2000Hz by default
+  loopRate(450); //Do not exceed 2000Hz, all filter parameters tuned to 2000Hz by default
 }
 
 
@@ -538,33 +550,30 @@ void loop() {
 
 
 void controlMixer() {
-  // DESCRIPTION: Trộn các kênh PID vào từng động cơ cho cấu hình Quad-X
   
-  // Các biến đầu vào:
-  // thro_des: Tín hiệu ga (0.0 đến 1.0)
-  // roll_PID, pitch_PID, yaw_PID: Tín hiệu ổn định từ cảm biến
-  
-  // ---------------------------------------------------------
-  // M1: Trước - Trái (Front Left) - Pin 6 - CW
-  // Cần: Lên ga + Nghiêng trái (Roll+) + Ngóc đầu (Pitch+) - Xoay trái (Yaw-)
   m1_command_scaled = thro_des + roll_PID + pitch_PID - yaw_PID;
-
-  // ---------------------------------------------------------
-  // M2: Trước - Phải (Front Right) - Pin 7 - CCW
-  // Cần: Lên ga - Nghiêng phải (Roll-) + Ngóc đầu (Pitch+) + Xoay phải (Yaw+)
   m2_command_scaled = thro_des - roll_PID + pitch_PID + yaw_PID;
-
-  // ---------------------------------------------------------
-  // M3: Sau - Phải (Back Right) - Pin 8 - CW
-  // Cần: Lên ga - Nghiêng phải (Roll-) - Chúi đầu (Pitch-) - Xoay trái (Yaw-)
   m3_command_scaled = thro_des - roll_PID - pitch_PID - yaw_PID;
-
-  // ---------------------------------------------------------
-  // M4: Sau - Trái (Back Left) - Pin 9 - CCW
-  // Cần: Lên ga + Nghiêng trái (Roll+) - Chúi đầu (Pitch-) + Xoay phải (Yaw+)
   m4_command_scaled = thro_des + roll_PID - pitch_PID + yaw_PID;
 
+  // =================================================================
+  // THUỐC ĐẶC TRỊ PHẦN CỨNG
+  // =================================================================
+  
+  // 2. KHỐNG CHẾ MAX GA (Để an toàn khi test)
+  // Đảm bảo không có motor nào vọt quá 2000 hoặc thấp hơn 1000
+  // (Đoạn code map PWM bên dưới của dRehmFlight sẽ lo việc này, 
+  // nhưng logic Mixer dừng ở đây là OK).
   // ---------------------------------------------------------
+
+  float right_boost = 1.12; 
+  float left_reduce = 1.0;
+
+  m2_command_scaled = m2_command_scaled * right_boost;
+  m3_command_scaled = m3_command_scaled * right_boost;
+
+  m1_command_scaled = m1_command_scaled * left_reduce;
+  m4_command_scaled = m4_command_scaled * left_reduce;
   
   // Các motor dư thừa (để bằng 0)
   m5_command_scaled = 0;
@@ -788,7 +797,7 @@ void calibrateAttitude() {
     // Thêm dấu TRỪ vào AccY
     // Dòng này đã TRÁO AccX và AccY cho nhau để khắc phục lỗi xoay 90 độ
 // Gyro giữ nguyên theo cấu hình chiều đúng bạn đã test
-Madgwick(-GyroX, -GyroY, GyroZ, -AccX, -AccY, AccZ, MagY, -MagX, MagZ, dt);
+    Madgwick(-GyroX, -GyroY, GyroZ, -AccX, -AccY, AccZ, MagY, -MagX, MagZ, dt);
     loopRate(2000); //do not exceed 2000Hz
   }
 }
@@ -1311,43 +1320,72 @@ void armMotors() {
 }
 
 void calibrateESCs() {
-  // CHẾ ĐỘ CALIB BẰNG TAY ĐIỀU KHIỂN (RADIO PASS-THROUGH)
-  // Nguyên lý: Ga tay cầm bao nhiêu -> Motor nhận bấy nhiêu
-  
-  Serial.println("--- CHE DO CALIB BANG RADIO ---");
-  Serial.println("Canh bao: THAO CANH QUAT NGAY LAP TUC!");
-  
-  while (true) {
-      // 1. Đọc tín hiệu từ tay cầm
-      getCommands(); 
-      
-      // Lưu ý: Biến channel_1_pwm trong code dRehmFlight chính là GA (Throttle)
-      // (Do bạn đã map lại channel ở bước trước rồi)
-      
-      // 2. Gán giá trị Ga trực tiếp cho 4 Motor
-      m1_command_PWM = channel_1_pwm;
-      m2_command_PWM = channel_1_pwm;
-      m3_command_PWM = channel_1_pwm;
-      m4_command_PWM = channel_1_pwm;
-      
-      // Giới hạn an toàn (1000 - 2000)
-      m1_command_PWM = constrain(m1_command_PWM, 1000, 2000);
-      m2_command_PWM = constrain(m2_command_PWM, 1000, 2000);
-      m3_command_PWM = constrain(m3_command_PWM, 1000, 2000);
-      m4_command_PWM = constrain(m4_command_PWM, 1000, 2000);
+  // Cài đặt timeout ngắn để không làm khựng motor khi đọc dữ liệu
+  Serial.setTimeout(5); 
 
-      // 3. Gửi lệnh ra Motor
-      commandMotors(); 
-      
-      // 4. In ra để kiểm tra xem Teensy có nhận được lệnh từ tay cầm không
-      // (Chỉ in nếu thay đổi để đỡ lag)
-      static int prev_thro = 0;
-      if (abs((long)channel_1_pwm - (long)prev_thro) > 10) {
-         Serial.print("Ga Tay Cam: "); Serial.println(channel_1_pwm);
-         prev_thro = channel_1_pwm;
+  Serial.println("--- CHE DO DIEU KHIEN MOTOR QUA SERIAL ---");
+  Serial.println("Cach dung: Nhap 'ky_tu gia_tri' (Vi du: 1 1200)");
+  Serial.println("   1, 2, 3, 4: Chon tung motor rieng le");
+  Serial.println("   a: Chon TAT CA (All) motor");
+  Serial.println("   s: STOP (Dung tat ca)");
+  Serial.println("LUU Y: Gia tri PWM tu 1000 (tat) den 2000 (max). Hay thu khoang 1100-1200.");
+  
+  // Khởi tạo giá trị ban đầu là tắt
+  int val_m1 = 1000;
+  int val_m2 = 1000;
+  int val_m3 = 1000;
+  int val_m4 = 1000;
+
+  while (true) {
+      // 1. Kiểm tra xem có lệnh từ Serial Monitor không
+      if (Serial.available() > 0) {
+          char cmd = Serial.read(); // Đọc ký tự đầu tiên (1, 2, 3, 4, a, s)
+          int val = Serial.parseInt(); // Đọc số tiếp theo (giá trị PWM)
+
+          // Xử lý lệnh
+          switch (cmd) {
+            case '1':
+              val_m1 = val;
+              Serial.print("-> Motor 1 set: "); Serial.println(val_m1);
+              break;
+            case '2':
+              val_m2 = val;
+              Serial.print("-> Motor 2 set: "); Serial.println(val_m2);
+              break;
+            case '3':
+              val_m3 = val;
+              Serial.print("-> Motor 3 set: "); Serial.println(val_m3);
+              break;
+            case '4':
+              val_m4 = val;
+              Serial.print("-> Motor 4 set: "); Serial.println(val_m4);
+              break;
+            case 'a': // All
+              val_m1 = val; val_m2 = val; val_m3 = val; val_m4 = val;
+              Serial.print("-> ALL Motors set: "); Serial.println(val);
+              break;
+            case 's': // Stop
+              val_m1 = 1000; val_m2 = 1000; val_m3 = 1000; val_m4 = 1000;
+              Serial.println("-> STOPPED ALL!");
+              break;
+          }
+          
+          // Xóa bộ đệm serial để tránh lệnh rác
+          while(Serial.available()) Serial.read(); 
       }
+
+      // 2. Giới hạn an toàn (Constrain)
+      // Chỉ cho phép từ 1000 đến 2000 để tránh cháy motor
+      m1_command_PWM = constrain(val_m1, 1000, 2000);
+      m2_command_PWM = constrain(val_m2, 1000, 2000);
+      m3_command_PWM = constrain(val_m3, 1000, 2000);
+      m4_command_PWM = constrain(val_m4, 1000, 2000);
+
+      // 3. Gửi tín hiệu xuống Motor
+      commandMotors();
       
-      delay(2); // Giữ nhịp loop
+      // Delay cực nhỏ để loop chạy ổn định
+      delay(2);
   }
 }
 
@@ -1604,4 +1642,54 @@ void failSafe() {
     channel_6_pwm = channel_6_fs;
   }
 }
+void printDiagnosticForPlotter() {
+  // Cập nhật mỗi 10ms (100Hz) để đồ thị dễ nhìn, không quá nhanh
+  if (current_time - print_counter > 10000) { 
+    print_counter = micros();
 
+    // 1. Kiểm tra Tần số Loop thực tế (Hz)
+    // dt là thời gian giữa 2 vòng lặp (tính bằng giây). 1/dt = Tần số (Hz).
+    // Nếu bạn dùng PWM thường, max chỉ khoảng 450-500Hz.
+    float actual_loop_rate = 1.0 / dt;
+    Serial.print("Real_Freq:"); 
+    Serial.print(actual_loop_rate); 
+    Serial.print(" "); // Serial Plotter dùng dấu cách hoặc phẩy phân cách
+
+    // 2. Kiểm tra độ trễ (Lag) của IMU
+    // GyroX: Phản ứng tức thì (Màu đỏ trên đồ thị)
+    // Roll_IMU: Góc đã qua tính toán (Màu xanh trên đồ thị)
+    // Nhân Gyro với 0.05 để hạ biên độ xuống cho dễ so sánh với Roll
+    Serial.print("Gyro_Raw:"); 
+    Serial.print(GyroX * 0.05); 
+    Serial.print(" ");
+
+    Serial.print("Roll_Angle:"); 
+    Serial.println(roll_IMU); 
+  }
+}
+
+void safetyCheck() {
+  // Chỉ kiểm tra khi drone đang trong trạng thái ARM (đang quay)
+  if (armedFly == true) {
+    
+    // Kiểm tra góc tuyệt đối (abs) của Roll và Pitch
+    // Nếu nghiêng quá 60 độ theo bất kỳ hướng nào
+    if (abs(roll_IMU) > 45.0 || abs(pitch_IMU) > 45.0) {
+      
+      // 1. NGẮT KÍCH HOẠT NGAY LẬP TỨC
+      armedFly = false;
+      
+      // 2. Ép Motor về giá trị tắt (Standard PWM = 1000)
+      m1_command_PWM = 1000;
+      m2_command_PWM = 1000;
+      m3_command_PWM = 1000;
+      m4_command_PWM = 1000;
+      
+      m5_command_scaled = 0; // Tắt cả motor phụ nếu có
+      m6_command_scaled = 0;
+      
+      // (Tuỳ chọn) In ra Serial để biết tại sao nó tắt
+      // Serial.println("!!! NGUY HIEM - DRONE BI LAT - DA NGAT DONG CO !!!");
+    }
+  }
+}
